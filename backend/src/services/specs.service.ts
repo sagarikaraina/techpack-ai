@@ -1,12 +1,14 @@
 import { getGenerativeModel } from './vertexai.service';
 import { GarmentSpecifications } from '../types';
+import { findBestFitMatch, applyFitMeasurements } from './fitMatch.service';
 
 const SPEC_EXTRACTION_PROMPT = `You are a professional garment technician. Analyze this garment image and extract detailed technical specifications.
 
 Return a JSON object with EXACTLY this structure (no markdown, no code fences, just raw JSON):
 {
-  "garmentType": "e.g. Blazer, Dress, Shirt, Pants",
-  "style": "e.g. Blue Cropped Blazer with Contrast Piping",
+  "garmentType": "e.g. Slim Crop Tee, Boxy Drop Tee, Oversized Tee, Slim Long Sleeve, Scoop Neck Skinny Tee, Blazer, Dress, Shirt, Pants",
+  "style": "e.g. Blue Cropped Blazer with Contrast Piping, Slim Crop Ringer Stripe Tee",
+  "fit": "Garment fit category — one of: SLIM, BOXY, OVERSIZED, SKINNY, OVERSIZE, or REGULAR if unclear",
   "description": "Short description, max 8-10 words e.g. Short sleeve knitted polo shirt with textured pattern",
   "season": "e.g. Summer 2027",
   "date": "today's date in DD.MM.YYYY format",
@@ -53,10 +55,11 @@ Return a JSON object with EXACTLY this structure (no markdown, no code fences, j
 
 Important:
 - Estimate realistic measurements based on the garment type visible in the image
-- constructionDetails MUST be comprehensive (aim for 8-15 entries). Include ALL of these where applicable:
-  Front View: collar/lapel construction, neckline finish, shoulder seam, armhole seam, side seam, front placket/closure, button/buttonhole placement & spacing, pocket construction (welt/patch/flap), pocket placement, dart placement, topstitching details, sleeve attachment, sleeve hem/cuff finish, front hem finish, piping/trim/contrast panels, zipper type & placement, waistband construction, pleats/gathers, embroidery/print placement, label placement
-  Back View: back neckline facing/finish, back yoke seam, center back seam, back dart placement, back vent/slit construction, back hem finish, back shoulder seam, back armhole finish, back pocket, back waistband, kick pleat
-- For EACH detail: specify stitch type (lockstitch, overlock, coverstitch, flatlock, blind hem), SPI/stitch density, seam allowance in cm, tolerance +/- in mm
+- constructionDetails MUST be EXTREMELY comprehensive (aim for 15-25 entries). A factory needs EVERY construction point documented. Include ALL of the following where applicable:
+  Front View: collar/neckline construction (rib type, width, attachment method), neckline binding/tape (width, fold, stitch), shoulder seam (type, SA, reinforcement), armhole seam (stitch type, SA), armhole binding/tape, side seam (stitch, SA), front placket/closure (width, fusing, stitch), button/buttonhole (size, type, spacing, placement from edge), pocket construction (type, topstitch gauge, bartack), pocket placement (distance from seam/hem), dart placement & angle, topstitching (gauge from edge, single/twin needle), sleeve attachment (set-in/raglan, stitch type), sleeve hem/cuff finish (fold width, stitch type, coverstitch gauge), front hem finish (fold width, blind hem/coverstitch), piping/trim/contrast panel (width, stitch), zipper (type, length, tape width), waistband (width, fusing, closure), pleats/gathers (distribution, stitch), embroidery/print (technique, placement from HPS/CF), label placement (main label, care label, size label positions), fusing/interlining areas, bartack/reinforcement positions
+  Back View: back neckline facing/finish, back neckline tape (width, stitch), back yoke seam (stitch, SA), center back seam, back dart (placement, length), back vent/slit (length, stitch, overlap), back hem finish, back shoulder seam (tape, SA), back armhole finish, back pocket, back waistband, kick pleat, back label position
+- For EACH detail: specify stitch type (lockstitch 301, overlock 504/516, coverstitch 602, flatlock 607, chain stitch 401, blind hem 103), SPI/stitch density, seam allowance in cm, tolerance +/- in mm, thread type if notable
+- Be extremely thorough — every visible seam, fold, edge, and attachment point should be a separate entry
 - Provide Pantone TCX color codes
 - Return ONLY valid JSON, no other text`;
 
@@ -66,6 +69,7 @@ export interface SpecParams {
   designer?: string;
   supplier?: string;
   notes?: string;
+  brandDna?: string;
 }
 
 export async function extractSpecifications(
@@ -95,8 +99,13 @@ export async function extractSpecifications(
     ? `\n\nThe following information has been provided by the designer — use these values where applicable:\n${contextParts.join('\n')}`
     : '';
 
+  // Brand DNA context — guides the AI on the brand's design language
+  const brandDnaStr = params?.brandDna
+    ? `\n\nBrand DNA — keep this brand identity in mind when describing the garment style, materials, and construction. The descriptions, material choices, and overall tone should align with this brand direction:\n${params.brandDna}`
+    : '';
+
   const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [imagePart, { text: SPEC_EXTRACTION_PROMPT + contextStr }] }],
+    contents: [{ role: 'user', parts: [imagePart, { text: SPEC_EXTRACTION_PROMPT + contextStr + brandDnaStr }] }],
   });
 
   const response = result.response;
@@ -108,12 +117,21 @@ export async function extractSpecifications(
 
   console.log('Raw spec response length:', text.length);
 
-  const specs = parseSpecifications(text);
+  let specs = parseSpecifications(text);
 
   // Override with user-provided values
   if (params?.season) specs.season = params.season;
   if (params?.designer) specs.designer = params.designer;
   if (params?.supplier) specs.supplier = params.supplier;
+
+  // Match against fit repository and apply definitive measurements
+  const fitMatch = findBestFitMatch(specs);
+  if (fitMatch.matched) {
+    specs = applyFitMeasurements(specs, fitMatch);
+    specs.matchedFit = fitMatch.matchedFit;
+    specs.matchedBody = fitMatch.matchedBody;
+    console.log(`Fit matched: ${fitMatch.matchedBody} (${fitMatch.matchedFit}) — ${specs.measurements.length} measurements applied`);
+  }
 
   console.log('Specifications extracted:', specs.garmentType, '-', specs.measurements.length, 'measurements');
 
@@ -158,9 +176,15 @@ function parseSpecifications(text: string): GarmentSpecifications {
       unit: m.unit || 'cm',
     }));
 
+    // Include AI-detected fit in garmentType for better repository matching
+    const aiFit = parsed.fit || '';
+    const garmentType = aiFit && !parsed.garmentType.toLowerCase().includes(aiFit.toLowerCase())
+      ? `${aiFit} ${parsed.garmentType}`
+      : parsed.garmentType;
+
     return {
-      garmentType: parsed.garmentType,
-      style: parsed.style || parsed.garmentType,
+      garmentType,
+      style: parsed.style || garmentType,
       description: parsed.description || '',
       season: parsed.season || '',
       date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.'),

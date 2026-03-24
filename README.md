@@ -12,6 +12,7 @@ An AI-powered tool that generates vendor-ready garment tech packs from images. U
 - **PDF Export** — Generates a downloadable A4 landscape PDF tech pack
 - **Multi-Image Upload** — Upload up to 10 garment images; AI selects the best front and back views
 - **Rate-Limited Queue** — Handles API rate limits with automatic backoff and retry
+- **Brand Support** — Select a brand (e.g. Nuon) before generating; brand name appears on tech sheet headers, footers, and PDF. Expandable Brand DNA panel shows the brand's target audience, personality, and design direction
 
 ## Tech Stack
 
@@ -70,15 +71,32 @@ techpack-ai/
 │   └── src/
 │       ├── App.tsx        # Main app with sidebar, progress, chat
 │       ├── TechSheet.tsx  # 3-page HTML tech sheet component
+│       ├── brands.ts      # Brand definitions with DNA descriptions
 │       └── *.css          # Styles
 ```
 
 ## Usage
 
 1. Upload one or more garment images
-2. Set parameters (season, department, designer, vendor)
-3. Click **Generate Tech Sheet**
-4. View the generated tech sheet with CAD drawings and specs
-5. Click **Edit** to modify any value inline
-6. Use the **chat** to make AI-driven revisions
-7. Click **Download** to export as PDF
+2. Select a **brand** (e.g. Nuon) — optionally expand **Brand DNA** to review the brand's design direction
+3. Set parameters (season, department, designer, vendor)
+4. Click **Generate Tech Sheet**
+5. View the generated tech sheet with CAD drawings and specs
+6. Click **Edit** to modify any value inline
+7. Use the **chat** to make AI-driven revisions
+8. Click **Download** to export as PDF
+
+## Adding a New Brand
+
+Edit `frontend/src/brands.ts` and add an entry to the `BRANDS` array:
+
+```ts
+{
+  id: 'your-brand',
+  name: 'BRAND NAME',       // Shown on tech sheet headers/footers and PDF
+  displayName: 'Brand Name', // Shown in the Brand DNA panel
+  dna: 'Brand DNA description...',
+}
+```
+
+No other file changes are needed — the new brand will appear as a selectable chip in the UI automatically.

@@ -13,6 +13,8 @@ export interface GarmentSpecifications {
   careInstructions: string[];
   trims: string[];
   uniqueFeatures: UniqueFeature[];
+  matchedFit?: string;   // e.g. "SLIM", "BOXY", "OVERSIZED"
+  matchedBody?: string;  // e.g. "SLIM CROP TEE", "BOXY DROP TEE"
 }
 
 export interface UniqueFeature {
@@ -25,6 +27,7 @@ export interface Measurement {
   name: string;
   value: number;
   unit: string;
+  source?: 'repo' | 'ai';  // 'repo' = from fit repository (mandatory), 'ai' = AI-generated
 }
 
 export interface Material {
@@ -60,6 +63,7 @@ export interface TechPackData {
   cadDrawings: CADDrawings;
   originalImage: Buffer;
   originalImages?: Buffer[];
+  brand?: string;
 }
 
 export interface GenerationOptions {

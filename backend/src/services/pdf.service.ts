@@ -31,16 +31,18 @@ export async function generateTechPackPDF(data: TechPackData): Promise<Buffer> {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
+      const brand = data.brand;
+
       // Page 1: Overview with front/back views, colors, fabric reference
-      renderPage1(doc, data);
+      renderPage1(doc, data, brand);
 
       // Page 2: Technical Comments
       doc.addPage({ size: 'A4', layout: 'landscape' });
-      renderPage2(doc, data);
+      renderPage2(doc, data, brand);
 
       // Page 3: Measurements
       doc.addPage({ size: 'A4', layout: 'landscape' });
-      renderPage3(doc, data);
+      renderPage3(doc, data, brand);
 
       doc.end();
     } catch (error) {
@@ -49,14 +51,14 @@ export async function generateTechPackPDF(data: TechPackData): Promise<Buffer> {
   });
 }
 
-function renderHeader(doc: PDFKit.PDFDocument, specs: GarmentSpecifications, pageTitle: string, pageNum: number) {
+function renderHeader(doc: PDFKit.PDFDocument, specs: GarmentSpecifications, pageTitle: string, pageNum: number, brand?: string) {
   const headerY = MARGIN;
 
   // Brand box (dark background)
   doc.save();
   doc.rect(MARGIN, headerY, 80, 40).fill(HEADER_BG);
   doc.fillColor('#FFFFFF').fontSize(14).font('Helvetica-Bold');
-  doc.text('ZUDIO', MARGIN + 10, headerY + 15, { width: 60, align: 'center', lineBreak: false });
+  doc.text(brand || 'NUON', MARGIN + 10, headerY + 15, { width: 60, align: 'center', lineBreak: false });
   doc.restore();
 
   // Page title (constrained to left half so it doesn't overlap style)
@@ -84,11 +86,11 @@ function renderHeader(doc: PDFKit.PDFDocument, specs: GarmentSpecifications, pag
   doc.text(`${pageNum}`, PAGE_WIDTH - MARGIN - 30, PAGE_HEIGHT - MARGIN + 5, { lineBreak: false });
 }
 
-function renderPage1(doc: PDFKit.PDFDocument, data: TechPackData) {
+function renderPage1(doc: PDFKit.PDFDocument, data: TechPackData, brand?: string) {
   const specs = data.specifications;
 
   // Header
-  renderHeader(doc, specs, `Description: ${specs.description}`, 1);
+  renderHeader(doc, specs, `Description: ${specs.description}`, 1, brand);
 
   const contentY = MARGIN + HEADER_HEIGHT;
   const contentHeight = PAGE_HEIGHT - contentY - MARGIN;
@@ -260,11 +262,11 @@ function renderPage1(doc: PDFKit.PDFDocument, data: TechPackData) {
   }
 }
 
-function renderPage2(doc: PDFKit.PDFDocument, data: TechPackData) {
+function renderPage2(doc: PDFKit.PDFDocument, data: TechPackData, brand?: string) {
   const specs = data.specifications;
 
   // Header
-  renderHeader(doc, specs, 'Technical Comments', 2);
+  renderHeader(doc, specs, 'Technical Comments', 2, brand);
 
   const contentY = MARGIN + HEADER_HEIGHT;
   const fullWidth = PAGE_WIDTH - 2 * MARGIN;
@@ -402,7 +404,7 @@ function renderPage2(doc: PDFKit.PDFDocument, data: TechPackData) {
     // If there's still content remaining, add a continuation page
     if (!leftDone || !rightDone) {
       doc.addPage({ size: 'A4', layout: 'landscape' });
-      renderHeader(doc, specs, 'Technical Comments (cont.)', 2);
+      renderHeader(doc, specs, 'Technical Comments (cont.)', 2, brand);
 
       leftY = MARGIN + HEADER_HEIGHT + 8;
       rY = MARGIN + HEADER_HEIGHT + 8;
@@ -422,11 +424,11 @@ function renderPage2(doc: PDFKit.PDFDocument, data: TechPackData) {
   }
 }
 
-function renderPage3(doc: PDFKit.PDFDocument, data: TechPackData) {
+function renderPage3(doc: PDFKit.PDFDocument, data: TechPackData, brand?: string) {
   const specs = data.specifications;
 
   // Header
-  renderHeader(doc, specs, 'SAMPLE SIZE', 3);
+  renderHeader(doc, specs, 'SAMPLE SIZE', 3, brand);
 
   const contentY = MARGIN + HEADER_HEIGHT;
   const contentHeight = PAGE_HEIGHT - contentY - MARGIN;
@@ -446,20 +448,26 @@ function renderPage3(doc: PDFKit.PDFDocument, data: TechPackData) {
   // Header row
   doc.rect(MARGIN, tableY, tableWidth, 16).fill('#F0F0F0');
   doc.fontSize(7).font('Helvetica-Bold').fillColor(DARK_GRAY);
-  doc.text('ID', MARGIN + 3, tableY + 4, { width: colWidths.id });
+  doc.text('REF', MARGIN + 3, tableY + 4, { width: colWidths.id });
   doc.text('NAME', MARGIN + colWidths.id + 3, tableY + 4, { width: colWidths.name });
   doc.text('M (CM)', MARGIN + colWidths.id + colWidths.name + 3, tableY + 4, { width: colWidths.value + colWidths.unit, align: 'center' });
   doc.rect(MARGIN, tableY, tableWidth, 16).strokeColor(BORDER_COLOR).lineWidth(0.3).stroke();
   tableY += 16;
 
-  // Measurement rows
-  for (const measurement of specs.measurements) {
+  // Filter measurements: keep repo measurements always, skip AI measurements with value 0
+  const visibleMeasurements = specs.measurements.filter(m =>
+    m.source === 'repo' || m.value > 0
+  );
+
+  // Measurement rows with letter labels (A, B, C...) for CAD diagram reference
+  visibleMeasurements.forEach((measurement, idx) => {
     const rowHeight = 16;
+    const letter = String.fromCharCode(65 + idx); // A, B, C...
 
     doc.fontSize(6).font('Helvetica').fillColor(DARK_GRAY);
-    doc.text(measurement.id, MARGIN + 3, tableY + 4, { width: colWidths.id - 6 });
+    doc.text(letter, MARGIN + 3, tableY + 4, { width: colWidths.id - 6 });
     doc.text(measurement.name, MARGIN + colWidths.id + 3, tableY + 4, { width: colWidths.name - 6 });
-    doc.text(String(measurement.value), MARGIN + colWidths.id + colWidths.name + 3, tableY + 4, {
+    doc.text(measurement.value > 0 ? String(measurement.value) : '-', MARGIN + colWidths.id + colWidths.name + 3, tableY + 4, {
       width: colWidths.value + colWidths.unit - 6,
       align: 'center',
     });
@@ -471,8 +479,8 @@ function renderPage3(doc: PDFKit.PDFDocument, data: TechPackData) {
 
     tableY += rowHeight;
 
-    if (tableY > PAGE_HEIGHT - MARGIN - 20) break;
-  }
+    if (tableY > PAGE_HEIGHT - MARGIN - 20) return;
+  });
 
   // Right side: Measurement drawings
   const drawingsX = MARGIN + tableWidth + 20;

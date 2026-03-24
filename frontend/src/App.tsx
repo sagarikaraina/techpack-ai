@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 import TechSheet from './TechSheet';
+import { BRANDS, getBrandById } from './brands';
 
 const API_BASE = 'http://localhost:3001/api';
 
@@ -80,6 +81,7 @@ function App() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [specs, setSpecs] = useState<GarmentSpecifications | null>(null);
   const [cadImages, setCadImages] = useState<ImageAvailability>({});
+  const [imageVersion, setImageVersion] = useState(0);
   const [originalCount, setOriginalCount] = useState(0);
   const [editOpen, setEditOpen] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -102,6 +104,10 @@ function App() {
   const [designer, setDesigner] = useState('');
   const [vendorName, setVendorName] = useState('');
   const [notes, setNotes] = useState('');
+  const [selectedBrandId, setSelectedBrandId] = useState(BRANDS[0]?.id || '');
+  const [showBrandDna, setShowBrandDna] = useState(false);
+  const selectedBrand = getBrandById(selectedBrandId);
+  const [brandDna, setBrandDna] = useState(selectedBrand?.dna || '');
 
   useEffect(() => {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
@@ -193,6 +199,8 @@ function App() {
         designer,
         supplier: vendorName,
         notes,
+        brand: selectedBrand?.name || 'NUON',
+        brandDna: brandDna,
       });
       const newJobId = res.data.jobId;
       setJobId(newJobId);
@@ -251,10 +259,21 @@ function App() {
 
     try {
       const res = await axios.post(`${API_BASE}/techpack/chat/${jobId}`, { message: msg }, { timeout: 300000 });
-      setChatMessages(prev => [...prev, { role: 'ai', text: res.data.changes }]);
+      const changeText = res.data.changes || 'Specifications updated.';
+      const pdfReady = res.data.downloadUrl
+        ? `${changeText}\n\u2705 Updated PDF is ready — click Download to view.`
+        : changeText;
+      setChatMessages(prev => [...prev, { role: 'ai', text: pdfReady }]);
       if (res.data.specifications) setSpecs(res.data.specifications);
       if (res.data.downloadUrl) {
         setPdfUrl(`${API_BASE.replace('/api', '')}${res.data.downloadUrl}?t=${Date.now()}`);
+      }
+      // Refresh CAD images (especially after structural changes like collar/neckline)
+      if (res.data.images) {
+        setCadImages(res.data.images);
+        if (res.data.regenerateCAD) {
+          setImageVersion(v => v + 1); // bust image cache
+        }
       }
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     } catch (err: any) {
@@ -368,6 +387,28 @@ function App() {
 
           <div className="sidebar-section">
             <p className="section-label">STEP 2 &mdash; PARAMETERS</p>
+
+            <div className="param-group">
+              <label className="param-label">BRAND</label>
+              <div className="chip-group">
+                {BRANDS.map(b => (
+                  <button key={b.id} className={`chip ${selectedBrandId === b.id ? 'active' : ''}`} onClick={() => { setSelectedBrandId(b.id); setBrandDna(b.dna); }}>{b.name}</button>
+                ))}
+              </div>
+              {selectedBrand && (
+                <div className="brand-dna-section">
+                  <button className="brand-dna-toggle" onClick={() => setShowBrandDna(!showBrandDna)}>
+                    <span className="brand-dna-toggle-icon">{showBrandDna ? '\u25BE' : '\u25B8'}</span>
+                    Brand DNA
+                  </button>
+                  {showBrandDna && (
+                    <div className="brand-dna-content">
+                      <textarea className="brand-dna-textarea" value={brandDna} onChange={e => setBrandDna(e.target.value)} />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="param-group">
               <label className="param-label">SEASON</label>
@@ -486,6 +527,8 @@ function App() {
                 images={cadImages}
                 originalCount={originalCount}
                 editMode={editOpen}
+                brandName={selectedBrand?.name || 'NUON'}
+                imageVersion={imageVersion}
                 onUpdate={(updated) => {
                   trackedUpdate('Inline edit', () => updated);
                 }}

@@ -21,6 +21,8 @@ interface JobParams {
   designer?: string;
   supplier?: string;
   notes?: string;
+  brand?: string;
+  brandDna?: string;
 }
 
 interface Job {
@@ -55,9 +57,9 @@ function getMimeType(filePath: string): string {
 
 router.post('/generate', async (req: Request, res: Response) => {
   // Accept either single fileId or array of fileIds
-  const { fileId, fileIds, season, department, designer, supplier, notes } = req.body;
+  const { fileId, fileIds, season, department, designer, supplier, notes, brand, brandDna } = req.body;
   const ids: string[] = fileIds || (fileId ? [fileId] : []);
-  const params: JobParams = { season, department, designer, supplier, notes };
+  const params: JobParams = { season, department, designer, supplier, notes, brand, brandDna };
 
   if (ids.length === 0) {
     res.status(400).json({ error: 'fileId or fileIds is required' });
@@ -193,7 +195,7 @@ async function processJob(job: Job, filePaths: { path: string; mimeType: string 
     job.progress = 94;
     job.currentStep = 'Generating PDF';
 
-    const techPackData: TechPackData = { specifications, cadDrawings, originalImage: selected.frontImage, originalImages: images.map(img => img.buffer) };
+    const techPackData: TechPackData = { specifications, cadDrawings, originalImage: selected.frontImage, originalImages: images.map(img => img.buffer), brand: job.params?.brand };
     const pdfBuffer = await generateTechPackPDF(techPackData);
 
     job.progress = 98;
@@ -277,6 +279,7 @@ router.post('/regenerate/:jobId', async (req: Request, res: Response) => {
       cadDrawings: job.cadDrawings,
       originalImage: job.originalImage,
       originalImages: job.originalImages,
+      brand: job.params?.brand,
     };
 
     const pdfBuffer = await generateTechPackPDF(techPackData);
@@ -361,6 +364,7 @@ router.post('/chat/:jobId', async (req: Request, res: Response) => {
       cadDrawings: job.cadDrawings,
       originalImage: job.originalImage,
       originalImages: job.originalImages,
+      brand: job.params?.brand,
     };
 
     const pdfBuffer = await generateTechPackPDF(techPackData);
@@ -371,12 +375,26 @@ router.post('/chat/:jobId', async (req: Request, res: Response) => {
 
     job.result = { pdfId, downloadUrl: `/api/techpack/download/${pdfId}` };
 
+    // Build image availability for frontend refresh
+    const images: Record<string, boolean | number> = {};
+    if (job.cadDrawings) {
+      images.front = !!job.cadDrawings.frontView;
+      images.back = !!job.cadDrawings.backView;
+      images.annotatedFront = !!job.cadDrawings.annotatedFrontView;
+      images.annotatedBack = !!job.cadDrawings.annotatedBackView;
+      images.measurementFront = !!job.cadDrawings.measurementDiagramFront;
+      images.measurementBack = !!job.cadDrawings.measurementDiagramBack;
+      images.detailCount = job.cadDrawings.detailViews?.length || 0;
+    }
+
     console.log(`Job ${job.id} revised via chat (CAD regenerated: ${regenerateCAD}). PDF: ${pdfId}`);
     res.json({
       changes: changes + (regenerateCAD ? ' (CAD drawings regenerated)' : ''),
       specifications: updatedSpecs,
       pdfId,
       downloadUrl: `/api/techpack/download/${pdfId}`,
+      images,
+      regenerateCAD,
     });
   } catch (error: any) {
     console.error('Chat revision error:', error);

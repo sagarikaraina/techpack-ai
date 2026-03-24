@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import './TechSheet.css';
 
 /* ── Types ── */
-interface Measurement { id: string; name: string; value: number; unit: string; }
+interface Measurement { id: string; name: string; value: number; unit: string; source?: 'repo' | 'ai'; }
 interface Material { type: string; description: string; }
 interface ColorSpec { name: string; pantone: string; hex?: string; }
 interface ConstructionDetail { title: string; description: string; location: string; }
@@ -14,6 +14,7 @@ interface GarmentSpecifications {
   colors: ColorSpec[]; constructionDetails: ConstructionDetail[];
   careInstructions: string[]; trims: string[];
   uniqueFeatures?: UniqueFeature[];
+  matchedFit?: string; matchedBody?: string;
 }
 
 interface ImageAvailability {
@@ -29,6 +30,8 @@ interface TechSheetProps {
   images: ImageAvailability;
   originalCount: number;
   editMode: boolean;
+  brandName: string;
+  imageVersion?: number;
   onUpdate: (specs: GarmentSpecifications) => void;
 }
 
@@ -70,16 +73,17 @@ function EC({ value, onChange, multiline = false, isChanged = false, editMode }:
   );
 }
 
-/* ── Image helper ── */
-function CadImage({ jobId, type, alt, className }: { jobId: string; type: string; alt: string; className?: string }) {
+/* ── Image helper with cache busting ── */
+function CadImage({ jobId, type, alt, className, version }: { jobId: string; type: string; alt: string; className?: string; version?: number }) {
   const [err, setErr] = useState(false);
-  const src = `${API_BASE}/techpack/images/${jobId}/${type}`;
+  const src = `${API_BASE}/techpack/images/${jobId}/${type}${version ? `?v=${version}` : ''}`;
+  useEffect(() => { setErr(false); }, [version]); // reset error on version change
   if (err) return <div className="ts-img-placeholder">{alt}</div>;
   return <img src={src} alt={alt} className={className || 'ts-cad-img'} onError={() => setErr(true)} />;
 }
 
 /* ── Main TechSheet Component ── */
-export default function TechSheet({ specs, jobId, images, originalCount, editMode, onUpdate }: TechSheetProps) {
+export default function TechSheet({ specs, jobId, images, originalCount, editMode, brandName, imageVersion, onUpdate }: TechSheetProps) {
   const [changedFields, setChangedFields] = useState<Record<string, number>>({});
 
   const isChanged = (label: string) => !!changedFields[label];
@@ -145,7 +149,7 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
       <div className="ts-page">
         {/* Header */}
         <div className="ts-header">
-          <div className="ts-logo">ZUDIO</div>
+          <div className="ts-logo">{brandName}</div>
           <div className="ts-desc-cell">
             <div className="ts-desc-main">Description: <E path="description" label="Description" /></div>
           </div>
@@ -156,6 +160,9 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
           <div className="ts-sub-cell"><span className="ts-sub-label">Date:</span> <E path="date" label="Date" /></div>
           <div className="ts-sub-cell"><span className="ts-sub-label">Vendor:</span> <E path="supplier" label="Vendor" /></div>
           <div className="ts-sub-cell"><span className="ts-sub-label">Designer:</span> <E path="designer" label="Designer" /></div>
+          {specs.matchedBody && (
+            <div className="ts-sub-cell"><span className="ts-sub-label">Fit Block:</span> {specs.matchedBody} ({specs.matchedFit})</div>
+          )}
         </div>
 
         {/* Body */}
@@ -167,7 +174,7 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
                 <div className="ts-view-label">FRONT VIEW</div>
                 <div className="ts-view-box">
                   {images.front
-                    ? <CadImage jobId={jobId} type="front" alt="Front View" />
+                    ? <CadImage jobId={jobId} version={imageVersion} type="front" alt="Front View" />
                     : <span className="ts-view-empty">Front View</span>}
                 </div>
               </div>
@@ -175,7 +182,7 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
                 <div className="ts-view-label">BACK VIEW</div>
                 <div className="ts-view-box">
                   {images.back
-                    ? <CadImage jobId={jobId} type="back" alt="Back View" />
+                    ? <CadImage jobId={jobId} version={imageVersion} type="back" alt="Back View" />
                     : <span className="ts-view-empty">Back View</span>}
                 </div>
               </div>
@@ -229,7 +236,7 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
             {features.length > 0 ? features.map((f, i) => (
               <div key={i} className="ts-swatch-item">
                 {(images.detailCount || 0) > i
-                  ? <CadImage jobId={jobId} type={`detail-${i}`} alt={f.name} className="ts-swatch-img" />
+                  ? <CadImage jobId={jobId} version={imageVersion} type={`detail-${i}`} alt={f.name} className="ts-swatch-img" />
                   : <div className="ts-swatch-box" />
                 }
                 <div className="ts-swatch-ref">{f.name}</div>
@@ -245,14 +252,14 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
 
         <div className="ts-footer">
           <span>1</span>
-          <span className="ts-footer-brand">ZUDIO</span>
+          <span className="ts-footer-brand">{brandName}</span>
         </div>
       </div>
 
       {/* ═══════ PAGE 2: TECHNICAL COMMENTS ═══════ */}
       <div className="ts-page">
         <div className="ts-header">
-          <div className="ts-logo">ZUDIO</div>
+          <div className="ts-logo">{brandName}</div>
           <div className="ts-desc-cell"><div className="ts-desc-main">Technical Comments</div></div>
           <div className="ts-style-cell">Style: {specs.style}</div>
         </div>
@@ -269,7 +276,7 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
             <div className="ts-view-label">FRONT VIEW</div>
             <div className="ts-view-box">
               {(images.annotatedFront || images.front)
-                ? <CadImage jobId={jobId} type={images.annotatedFront ? 'annotated-front' : 'front'} alt="Front View" />
+                ? <CadImage jobId={jobId} version={imageVersion} type={images.annotatedFront ? 'annotated-front' : 'front'} alt="Front View" />
                 : <span className="ts-view-empty">Front View</span>}
             </div>
           </div>
@@ -277,7 +284,7 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
             <div className="ts-view-label">BACK VIEW</div>
             <div className="ts-view-box">
               {(images.annotatedBack || images.back)
-                ? <CadImage jobId={jobId} type={images.annotatedBack ? 'annotated-back' : 'back'} alt="Back View" />
+                ? <CadImage jobId={jobId} version={imageVersion} type={images.annotatedBack ? 'annotated-back' : 'back'} alt="Back View" />
                 : <span className="ts-view-empty">Back View</span>}
             </div>
           </div>
@@ -337,14 +344,14 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
 
         <div className="ts-footer">
           <span>2</span>
-          <span className="ts-footer-brand">ZUDIO</span>
+          <span className="ts-footer-brand">{brandName}</span>
         </div>
       </div>
 
       {/* ═══════ PAGE 3: SAMPLE SIZE ═══════ */}
       <div className="ts-page">
         <div className="ts-header">
-          <div className="ts-logo">ZUDIO</div>
+          <div className="ts-logo">{brandName}</div>
           <div className="ts-desc-cell"><div className="ts-desc-main">SAMPLE SIZE</div></div>
           <div className="ts-style-cell">Style: {specs.style}</div>
         </div>
@@ -356,24 +363,27 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
         </div>
 
         <div className="ts-p3-body">
-          {/* Left: Measurement table */}
+          {/* Left: Measurement table — filter out AI measurements with value 0, always keep repo */}
           <div className="ts-p3-table">
             <div className="ts-p3-th">
-              <div className="ts-p3-th-cell" style={{ flex: 1.2 }}>ID</div>
-              <div className="ts-p3-th-cell" style={{ flex: 1.8 }}>NAME</div>
+              <div className="ts-p3-th-cell" style={{ flex: 0.5 }}>REF</div>
+              <div className="ts-p3-th-cell" style={{ flex: 2.0 }}>NAME</div>
               <div className="ts-p3-th-cell" style={{ flex: 0.8, textAlign: 'center' }}>M (CM)</div>
             </div>
-            {specs.measurements.map((m, i) => (
-              <div key={i} className="ts-p3-tr">
-                <div className="ts-p3-td ts-p3-id" style={{ flex: 1.2 }}>
-                  <E path={`measurements.${i}.id`} label={`M${i+1} ID`} />
+            {specs.measurements
+              .map((m, origIdx) => ({ m, origIdx }))
+              .filter(({ m }) => m.source === 'repo' || m.value > 0)
+              .map(({ m, origIdx }, visIdx) => (
+              <div key={origIdx} className="ts-p3-tr">
+                <div className="ts-p3-td ts-p3-id" style={{ flex: 0.5, fontWeight: 600, textAlign: 'center' }}>
+                  {String.fromCharCode(65 + visIdx)}
                 </div>
-                <div className="ts-p3-td" style={{ flex: 1.8 }}>
-                  <E path={`measurements.${i}.name`} label={`M${i+1} Name`} />
+                <div className="ts-p3-td" style={{ flex: 2.0 }}>
+                  <E path={`measurements.${origIdx}.name`} label={`M${visIdx+1} Name`} />
                 </div>
                 <div className="ts-p3-td ts-p3-val" style={{ flex: 0.8 }}>
-                  <E path={`measurements.${i}.value`} label={`M${i+1} Value`} />
-                  {editMode && <button className="ts-row-del" onClick={() => removeRow('measurements', i, '- Measurement')}>x</button>}
+                  {m.value > 0 ? <E path={`measurements.${origIdx}.value`} label={`M${visIdx+1} Value`} /> : <span style={{ color: '#999' }}>-</span>}
+                  {editMode && <button className="ts-row-del" onClick={() => removeRow('measurements', origIdx, '- Measurement')}>x</button>}
                 </div>
               </div>
             ))}
@@ -386,7 +396,7 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
               <div className="ts-drawing-label">FRONT — MEASUREMENT DRAWING</div>
               <div className="ts-drawing-box">
                 {images.measurementFront
-                  ? <CadImage jobId={jobId} type="measurement-front" alt="Front Measurements" />
+                  ? <CadImage jobId={jobId} version={imageVersion} type="measurement-front" alt="Front Measurements" />
                   : <span className="ts-view-empty">Front measurement drawing</span>}
               </div>
             </div>
@@ -394,7 +404,7 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
               <div className="ts-drawing-label">BACK — MEASUREMENT DRAWING</div>
               <div className="ts-drawing-box">
                 {images.measurementBack
-                  ? <CadImage jobId={jobId} type="measurement-back" alt="Back Measurements" />
+                  ? <CadImage jobId={jobId} version={imageVersion} type="measurement-back" alt="Back Measurements" />
                   : <span className="ts-view-empty">Back measurement drawing</span>}
               </div>
             </div>
@@ -403,7 +413,7 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
 
         <div className="ts-footer">
           <span>3</span>
-          <span className="ts-footer-brand">ZUDIO</span>
+          <span className="ts-footer-brand">{brandName}</span>
         </div>
       </div>
 
