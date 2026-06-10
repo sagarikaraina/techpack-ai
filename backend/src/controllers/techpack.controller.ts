@@ -165,7 +165,8 @@ async function processJob(job: Job, filePaths: { path: string; mimeType: string 
         baseCAD.frontView, baseCAD.backView,
         selected.frontImage, selected.frontMime,
         specifications.measurements,
-        (_completed, _total, label) => { updatePhase2(label); }
+        (_completed, _total, label) => { updatePhase2(label); },
+        specifications.placementDetails || []
       ),
       generateAnnotatedCAD(
         baseCAD.frontView, baseCAD.backView,
@@ -333,17 +334,20 @@ router.post('/chat/:jobId', async (req: Request, res: Response) => {
         console.log(`Chat CAD: ${label} (${completed}/${total})`);
       });
 
-      const [measurementCAD, annotatedCAD] = await Promise.all([
+      const [measurementCAD, annotatedCAD, featureCloseups] = await Promise.all([
         generateMeasurementCAD(
           baseCAD.frontView, baseCAD.backView,
           job.originalImage, 'image/jpeg',
-          updatedSpecs.measurements
+          updatedSpecs.measurements,
+          undefined,
+          updatedSpecs.placementDetails || []
         ),
         generateAnnotatedCAD(
           baseCAD.frontView, baseCAD.backView,
           updatedSpecs.constructionDetails,
           job.originalImage, 'image/jpeg'
         ),
+        generateFeatureCloseups(job.originalImage, 'image/jpeg', updatedSpecs.uniqueFeatures || []),
       ]);
 
       job.cadDrawings = {
@@ -353,6 +357,7 @@ router.post('/chat/:jobId', async (req: Request, res: Response) => {
         annotatedBackView: annotatedCAD.annotatedBack,
         measurementDiagramFront: measurementCAD.measurementFront,
         measurementDiagramBack: measurementCAD.measurementBack,
+        detailViews: featureCloseups,
       };
     } else {
       console.log('Minor change — skipping CAD regeneration.');

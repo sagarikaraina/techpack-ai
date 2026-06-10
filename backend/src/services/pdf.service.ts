@@ -40,7 +40,7 @@ export async function generateTechPackPDF(data: TechPackData): Promise<Buffer> {
       doc.addPage({ size: 'A4', layout: 'landscape' });
       renderPage2(doc, data, brand);
 
-      // Page 3: Measurements
+      // Page 3: Measurements table (left) + CAD Drawings (right)
       doc.addPage({ size: 'A4', layout: 'landscape' });
       renderPage3(doc, data, brand);
 
@@ -273,7 +273,7 @@ function renderPage2(doc: PDFKit.PDFDocument, data: TechPackData, brand?: string
   const halfWidth = fullWidth / 2;
 
   // --- Top section: Front & Back annotated CAD drawings side by side ---
-  const drawingHeight = 180;
+  const drawingHeight = 110;
 
   doc.fontSize(8).font('Helvetica-Bold').fillColor(DARK_GRAY);
   doc.text('FRONT VIEW', MARGIN, contentY, { width: halfWidth, align: 'center', lineBreak: false });
@@ -329,30 +329,36 @@ function renderPage2(doc: PDFKit.PDFDocument, data: TechPackData, brand?: string
   const maxY = PAGE_HEIGHT - MARGIN - 10;
   const leftX = MARGIN;
   const rightColX = MARGIN + colWidth + colGap;
-  const fontSize = 5.5;
-  const minRowH = 16;
+  const fontSize = 5;
+  const rowH = 11; // compact row height — fits more rows per page
 
-  // Helper: measure row height
-  const measureRow = (detail: { title: string; description: string }) => {
-    doc.fontSize(fontSize);
-    const descH = doc.heightOfString(detail.description, { width: descColW - 6 });
-    const titleH = doc.heightOfString(detail.title, { width: titleColW - 6 });
-    return Math.max(descH + 6, titleH + 6, minRowH);
-  };
-
-  // Helper: draw a numbered row
+  // Helper: draw a fixed-height row — all text is single-line with ellipsis, clipped per cell
   const drawRow = (x: number, y: number, num: number, detail: { title: string; description: string }) => {
-    const rowH = measureRow(detail);
+    // White background for all rows
+    doc.rect(x, y, numColW + titleColW + descColW, rowH).fill('#FFFFFF');
 
-    doc.fontSize(fontSize).font('Helvetica-Bold').fillColor(DARK_GRAY);
-    doc.text(String(num), x + 2, y + 2, { width: numColW - 4, align: 'center', lineBreak: false });
+    // ── num cell ──
+    doc.save();
+    doc.rect(x, y, numColW, rowH).clip();
+    doc.fontSize(fontSize).font('Helvetica-Bold').fillColor('#111111');
+    doc.text(String(num), x + 2, y + 3, { width: numColW - 4, align: 'center', lineBreak: false });
+    doc.restore();
 
-    doc.fontSize(fontSize).font('Helvetica-Bold').fillColor(DARK_GRAY);
-    doc.text(detail.title, x + numColW + 2, y + 2, { width: titleColW - 6, height: rowH - 4, ellipsis: true });
+    // ── title cell ──
+    doc.save();
+    doc.rect(x + numColW, y, titleColW, rowH).clip();
+    doc.fontSize(fontSize).font('Helvetica-Bold').fillColor('#111111');
+    doc.text(detail.title, x + numColW + 2, y + 3, { width: titleColW - 6, lineBreak: false, ellipsis: true });
+    doc.restore();
 
-    doc.fontSize(fontSize).font('Helvetica').fillColor(MEDIUM_GRAY);
-    doc.text(detail.description, x + numColW + titleColW + 2, y + 2, { width: descColW - 6, height: rowH - 4, ellipsis: true });
+    // ── description cell ──
+    doc.save();
+    doc.rect(x + numColW + titleColW, y, descColW, rowH).clip();
+    doc.fontSize(fontSize).font('Helvetica').fillColor('#111111');
+    doc.text(detail.description, x + numColW + titleColW + 2, y + 3, { width: descColW - 6, lineBreak: false, ellipsis: true });
+    doc.restore();
 
+    // ── cell borders ──
     doc.rect(x, y, numColW, rowH).strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
     doc.rect(x + numColW, y, titleColW, rowH).strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
     doc.rect(x + numColW + titleColW, y, descColW, rowH).strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
@@ -369,15 +375,29 @@ function renderPage2(doc: PDFKit.PDFDocument, data: TechPackData, brand?: string
   let rightDone = false;
   let isFirstPage = true;
 
-  // Draw section labels on first page
-  doc.fontSize(7).font('Helvetica-Bold').fillColor(DARK_GRAY);
-  doc.text('Front View:', leftX, leftY, { lineBreak: false });
-  leftY += 12;
+  // Clip the entire table region so nothing can bleed past the page boundary
+  doc.save();
+  doc.rect(MARGIN, tableStartY, fullWidth, maxY - tableStartY).clip();
+
+  // Draw table headers on first page
+  const thH = 12;
+
+  // Front column header
+  doc.rect(leftX, leftY, colWidth, thH).fill('#FFFFFF');
+  doc.fontSize(6).font('Helvetica-Bold').fillColor('#111111');
+  doc.text('Front View', leftX + numColW + 3, leftY + 3, { width: titleColW - 6, lineBreak: false });
+  doc.text('Description', leftX + numColW + titleColW + 3, leftY + 3, { width: descColW - 6, lineBreak: false });
+  doc.rect(leftX, leftY, colWidth, thH).strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
+  leftY += thH;
 
   if (backDetails.length > 0) {
-    doc.fontSize(7).font('Helvetica-Bold').fillColor(DARK_GRAY);
-    doc.text('Back View:', rightColX, rY, { lineBreak: false });
-    rY += 12;
+    // Back column header
+    doc.rect(rightColX, rY, colWidth, thH).fill('#FFFFFF');
+    doc.fontSize(6).font('Helvetica-Bold').fillColor('#111111');
+    doc.text('Back View', rightColX + numColW + 3, rY + 3, { width: titleColW - 6, lineBreak: false });
+    doc.text('Description', rightColX + numColW + titleColW + 3, rY + 3, { width: descColW - 6, lineBreak: false });
+    doc.rect(rightColX, rY, colWidth, thH).strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
+    rY += thH;
   } else {
     rightDone = true;
   }
@@ -385,8 +405,7 @@ function renderPage2(doc: PDFKit.PDFDocument, data: TechPackData, brand?: string
   while (!leftDone || !rightDone) {
     // Render front rows on left column
     while (frontIdx < frontDetails.length) {
-      const h = measureRow(frontDetails[frontIdx]);
-      if (leftY + h > maxY) break;
+      if (leftY + rowH > maxY) break;
       leftY += drawRow(leftX, leftY, frontIdx + 1, frontDetails[frontIdx]);
       frontIdx++;
     }
@@ -394,8 +413,7 @@ function renderPage2(doc: PDFKit.PDFDocument, data: TechPackData, brand?: string
 
     // Render back rows on right column
     while (backIdx < backDetails.length) {
-      const h = measureRow(backDetails[backIdx]);
-      if (rY + h > maxY) break;
+      if (rY + rowH > maxY) break;
       rY += drawRow(rightColX, rY, backIdx + 1, backDetails[backIdx]);
       backIdx++;
     }
@@ -403,127 +421,276 @@ function renderPage2(doc: PDFKit.PDFDocument, data: TechPackData, brand?: string
 
     // If there's still content remaining, add a continuation page
     if (!leftDone || !rightDone) {
+      doc.restore(); // release clip from previous page
       doc.addPage({ size: 'A4', layout: 'landscape' });
       renderHeader(doc, specs, 'Technical Comments (cont.)', 2, brand);
 
       leftY = MARGIN + HEADER_HEIGHT + 8;
       rY = MARGIN + HEADER_HEIGHT + 8;
 
+      // Re-apply clip for the new page
+      doc.save();
+      doc.rect(MARGIN, leftY, fullWidth, maxY - leftY).clip();
+
       if (!leftDone) {
-        doc.fontSize(7).font('Helvetica-Bold').fillColor(DARK_GRAY);
-        doc.text('Front View (cont.):', leftX, leftY, { lineBreak: false });
-        leftY += 12;
+        doc.rect(leftX, leftY, colWidth, thH).fill('#FFFFFF');
+        doc.fontSize(6).font('Helvetica-Bold').fillColor('#111111');
+        doc.text('Front View (cont.)', leftX + numColW + 3, leftY + 3, { width: titleColW - 6, lineBreak: false });
+        doc.text('Description', leftX + numColW + titleColW + 3, leftY + 3, { width: descColW - 6, lineBreak: false });
+        doc.rect(leftX, leftY, colWidth, thH).strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
+        leftY += thH;
       }
 
       if (!rightDone) {
-        doc.fontSize(7).font('Helvetica-Bold').fillColor(DARK_GRAY);
-        doc.text('Back View (cont.):', rightColX, rY, { lineBreak: false });
-        rY += 12;
+        doc.rect(rightColX, rY, colWidth, thH).fill('#FFFFFF');
+        doc.fontSize(6).font('Helvetica-Bold').fillColor('#111111');
+        doc.text('Back View (cont.)', rightColX + numColW + 3, rY + 3, { width: titleColW - 6, lineBreak: false });
+        doc.text('Description', rightColX + numColW + titleColW + 3, rY + 3, { width: descColW - 6, lineBreak: false });
+        doc.rect(rightColX, rY, colWidth, thH).strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
+        rY += thH;
       }
     }
   }
+
+  // Release the table clip
+  doc.restore();
 }
 
+// ── PAGE 3: Measurements table (LEFT) + CAD Drawings (RIGHT) ──────────────────
 function renderPage3(doc: PDFKit.PDFDocument, data: TechPackData, brand?: string) {
   const specs = data.specifications;
 
-  // Header
-  renderHeader(doc, specs, 'SAMPLE SIZE', 3, brand);
+  renderHeader(doc, specs, 'MEASUREMENT DRAWINGS', 3, brand);
 
   const contentY = MARGIN + HEADER_HEIGHT;
-  const contentHeight = PAGE_HEIGHT - contentY - MARGIN;
+  const contentH = PAGE_HEIGHT - contentY - MARGIN;
+  const totalW   = PAGE_WIDTH - 2 * MARGIN;
+  const firstPageTableW = totalW * 0.40;
+  const tableX = MARGIN;
+  const tableBottom = PAGE_HEIGHT - MARGIN - 10;
+  const rowH = 10;
+  const headerH = 12;
 
-  // Left side: Measurements table (55% width)
-  const tableWidth = (PAGE_WIDTH - 2 * MARGIN) * 0.55;
-  let tableY = contentY;
+  const visibleMeasurements = specs.measurements;
+  const placements = specs.placementDetails?.filter(p => p.item) || [];
 
-  // Table headers
-  const colWidths = {
-    id: tableWidth * 0.25,
-    name: tableWidth * 0.40,
-    value: tableWidth * 0.20,
-    unit: tableWidth * 0.15,
+  const col = {
+    num:   firstPageTableW * 0.14,
+    name:  firstPageTableW * 0.56,
+    value: firstPageTableW * 0.30,
+  };
+  const pCol = {
+    num:  col.num,
+    item: firstPageTableW * 0.28,
+    ref:  firstPageTableW * 0.28,
+    val:  firstPageTableW - col.num - firstPageTableW * 0.28 - firstPageTableW * 0.28,
   };
 
-  // Header row
-  doc.rect(MARGIN, tableY, tableWidth, 16).fill('#F0F0F0');
-  doc.fontSize(7).font('Helvetica-Bold').fillColor(DARK_GRAY);
-  doc.text('REF', MARGIN + 3, tableY + 4, { width: colWidths.id });
-  doc.text('NAME', MARGIN + colWidths.id + 3, tableY + 4, { width: colWidths.name });
-  doc.text('M (CM)', MARGIN + colWidths.id + colWidths.name + 3, tableY + 4, { width: colWidths.value + colWidths.unit, align: 'center' });
-  doc.rect(MARGIN, tableY, tableWidth, 16).strokeColor(BORDER_COLOR).lineWidth(0.3).stroke();
-  tableY += 16;
+  // ── Draw CAD Drawings on the RIGHT side of first page ──────────────────
+  const drawStartX = tableX + firstPageTableW + 12;
+  const drawW      = PAGE_WIDTH - MARGIN - drawStartX;
+  const halfH      = (contentH - 28) / 2;
 
-  // Filter measurements: keep repo measurements always, skip AI measurements with value 0
-  const visibleMeasurements = specs.measurements.filter(m =>
-    m.source === 'repo' || m.value > 0
-  );
+  // Vertical divider
+  doc.moveTo(tableX + firstPageTableW + 5, contentY)
+     .lineTo(tableX + firstPageTableW + 5, PAGE_HEIGHT - MARGIN)
+     .strokeColor(LIGHT_GRAY).lineWidth(0.5).stroke();
 
-  // Measurement rows with letter labels (A, B, C...) for CAD diagram reference
-  visibleMeasurements.forEach((measurement, idx) => {
-    const rowHeight = 16;
-    const letter = String.fromCharCode(65 + idx); // A, B, C...
+  // FRONT — top half
+  doc.fontSize(6).font('Helvetica-Bold').fillColor('#111111');
+  doc.text('FRONT — MEASUREMENT DRAWING', drawStartX, contentY, { width: drawW, align: 'center', lineBreak: false });
 
-    doc.fontSize(6).font('Helvetica').fillColor(DARK_GRAY);
-    doc.text(letter, MARGIN + 3, tableY + 4, { width: colWidths.id - 6 });
-    doc.text(measurement.name, MARGIN + colWidths.id + 3, tableY + 4, { width: colWidths.name - 6 });
-    doc.text(measurement.value > 0 ? String(measurement.value) : '-', MARGIN + colWidths.id + colWidths.name + 3, tableY + 4, {
-      width: colWidths.value + colWidths.unit - 6,
-      align: 'center',
-    });
-
-    // Row borders
-    doc.rect(MARGIN, tableY, colWidths.id, rowHeight).strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
-    doc.rect(MARGIN + colWidths.id, tableY, colWidths.name, rowHeight).strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
-    doc.rect(MARGIN + colWidths.id + colWidths.name, tableY, colWidths.value + colWidths.unit, rowHeight).strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
-
-    tableY += rowHeight;
-
-    if (tableY > PAGE_HEIGHT - MARGIN - 20) return;
-  });
-
-  // Right side: Measurement drawings
-  const drawingsX = MARGIN + tableWidth + 20;
-  const drawingsWidth = PAGE_WIDTH - MARGIN - drawingsX;
-  const drawingHeight = contentHeight / 2 - 15;
-
-  // Front measurement diagram
-  doc.fontSize(7).font('Helvetica-Bold').fillColor(DARK_GRAY);
-  doc.text('FRONT — MEASUREMENT DRAWING', drawingsX, contentY, { width: drawingsWidth, align: 'center' });
-
+  const frontImgY = contentY + 12;
   if (data.cadDrawings.measurementDiagramFront) {
-    try {
-      doc.image(data.cadDrawings.measurementDiagramFront, drawingsX + 10, contentY + 12, {
-        fit: [drawingsWidth - 20, drawingHeight],
-        align: 'center',
-        valign: 'center',
-      });
-    } catch (e) {
-      drawPlaceholder(doc, drawingsX + 10, contentY + 12, drawingsWidth - 20, drawingHeight, 'Front Measurements');
-    }
+    try { doc.image(data.cadDrawings.measurementDiagramFront, drawStartX, frontImgY, { fit: [drawW, halfH], align: 'center', valign: 'center' }); }
+    catch { drawPlaceholder(doc, drawStartX, frontImgY, drawW, halfH, 'Front Measurement Drawing'); }
   } else {
-    drawPlaceholder(doc, drawingsX + 10, contentY + 12, drawingsWidth - 20, drawingHeight, 'Front Measurements');
+    drawPlaceholder(doc, drawStartX, frontImgY, drawW, halfH, 'Front Measurement Drawing');
   }
 
-  // Back measurement diagram
-  const backDiagramY = contentY + drawingHeight + 25;
-  doc.fontSize(7).font('Helvetica-Bold').fillColor(DARK_GRAY);
-  doc.text('BACK — MEASUREMENT DRAWING', drawingsX, backDiagramY, { width: drawingsWidth, align: 'center' });
+  // BACK — bottom half
+  const backLabelY = frontImgY + halfH + 6;
+  const backImgY   = backLabelY + 12;
+  doc.fontSize(6).font('Helvetica-Bold').fillColor('#111111');
+  doc.text('BACK — MEASUREMENT DRAWING', drawStartX, backLabelY, { width: drawW, align: 'center', lineBreak: false });
 
   if (data.cadDrawings.measurementDiagramBack) {
-    try {
-      doc.image(data.cadDrawings.measurementDiagramBack, drawingsX + 10, backDiagramY + 12, {
-        fit: [drawingsWidth - 20, drawingHeight],
-        align: 'center',
-        valign: 'center',
-      });
-    } catch (e) {
-      drawPlaceholder(doc, drawingsX + 10, backDiagramY + 12, drawingsWidth - 20, drawingHeight, 'Back Measurements');
-    }
+    try { doc.image(data.cadDrawings.measurementDiagramBack, drawStartX, backImgY, { fit: [drawW, halfH], align: 'center', valign: 'center' }); }
+    catch { drawPlaceholder(doc, drawStartX, backImgY, drawW, halfH, 'Back Measurement Drawing'); }
   } else {
-    drawPlaceholder(doc, drawingsX + 10, backDiagramY + 12, drawingsWidth - 20, drawingHeight, 'Back Measurements');
+    drawPlaceholder(doc, drawStartX, backImgY, drawW, halfH, 'Back Measurement Drawing');
   }
+
+  // ── Draw LEFT-side table with overflow support ────────────────────────────
+  let tableW = firstPageTableW;
+  let tableY = contentY;
+  let measIdx = 0;
+  let placeIdx = 0;
+  let measDone = false;
+  let placeDone = placements.length === 0;
+  let placementSectionStartY = 0;
+  let placementHeaderDrawn = false;
+
+  // Helper: draw measurement table header
+  const drawMeasHeader = (y: number, tw: number, label: string) => {
+    doc.rect(tableX, y, tw, headerH).fill('#FFFFFF');
+    doc.fontSize(6).font('Helvetica-Bold').fillColor('#111111');
+    doc.text('NO.',    tableX + 3,                      y + 3, { width: col.num - 4,   align: 'center',  lineBreak: false });
+    doc.text(label,    tableX + col.num + 3,            y + 3, { width: col.name - 6,  lineBreak: false, ellipsis: true });
+    doc.text('VALUE (CM)', tableX + col.num + col.name + 2, y + 3, { width: col.value - 4, align: 'center',  lineBreak: false });
+    doc.rect(tableX, y, tw, headerH).strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
+  };
+
+  // Helper: draw one measurement row
+  const drawMeasRow = (y: number, tw: number, m: { name: string; value: number }, idx: number) => {
+    doc.rect(tableX, y, tw, rowH).fill('#FFFFFF');
+    doc.fontSize(5).font('Helvetica-Bold').fillColor('#111111');
+    doc.text(String(idx + 1), tableX + 2, y + 2, { width: col.num - 4, align: 'center', lineBreak: false });
+    doc.font('Helvetica').fillColor('#111111');
+    doc.text(m.name, tableX + col.num + 2, y + 2, { width: col.name - 4, lineBreak: false, ellipsis: true });
+    doc.font('Helvetica-Bold').fillColor('#111111');
+    doc.text(m.value > 0 ? `${m.value} cm` : '—', tableX + col.num + col.name + 2, y + 2, { width: col.value - 4, align: 'center', lineBreak: false });
+    let bx = tableX;
+    for (const w of [col.num, col.name, col.value]) {
+      doc.rect(bx, y, w, rowH).strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
+      bx += w;
+    }
+  };
+
+  // Helper: draw placement headers
+  const drawPlacementHeaders = (y: number, tw: number) => {
+    const pHeaderH = 11;
+    doc.rect(tableX, y, tw, pHeaderH).fill('#FFFFFF');
+    doc.fontSize(6).font('Helvetica-Bold').fillColor('#111111');
+    doc.text('PLACEMENT & DETAIL SPECIFICATIONS', tableX + 3, y + 3, { width: tw - 6, lineBreak: false, ellipsis: true });
+    doc.rect(tableX, y, tw, pHeaderH).strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
+    y += pHeaderH;
+
+    const pSubH = 10;
+    doc.rect(tableX, y, tw, pSubH).fill('#FFFFFF');
+    doc.fontSize(6).font('Helvetica-Bold').fillColor('#111111');
+    let px = tableX + 3;
+    doc.text('NO.',  px, y + 2, { width: pCol.num - 4,  align: 'center', lineBreak: false }); px += pCol.num;
+    doc.text('ITEM', px, y + 2, { width: pCol.item - 4, lineBreak: false });                   px += pCol.item;
+    doc.text('FROM', px, y + 2, { width: pCol.ref - 4,  lineBreak: false });                   px += pCol.ref;
+    doc.text('CM',   px, y + 2, { width: pCol.val - 4,  align: 'center', lineBreak: false });
+    doc.rect(tableX, y, tw, pSubH).strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
+    y += pSubH;
+    return y;
+  };
+
+  // Helper: draw one placement row
+  const drawPlacementRow = (y: number, tw: number, pd: { item: string; reference: string; value: number }, num: number) => {
+    doc.rect(tableX, y, tw, rowH).fill('#FFFFFF');
+    let cx = tableX;
+    doc.save(); doc.rect(cx, y, pCol.num, rowH).clip();
+    doc.fontSize(5).font('Helvetica-Bold').fillColor('#111111');
+    doc.text(String(num), cx + 2, y + 2, { width: pCol.num - 4, align: 'center', lineBreak: false });
+    doc.restore(); cx += pCol.num;
+    doc.save(); doc.rect(cx, y, pCol.item, rowH).clip();
+    doc.fontSize(5).font('Helvetica').fillColor('#111111');
+    doc.text(pd.item, cx + 2, y + 2, { width: pCol.item - 4, lineBreak: false, ellipsis: true });
+    doc.restore(); cx += pCol.item;
+    doc.save(); doc.rect(cx, y, pCol.ref, rowH).clip();
+    doc.fontSize(5).font('Helvetica').fillColor('#111111');
+    doc.text(pd.reference, cx + 2, y + 2, { width: pCol.ref - 4, lineBreak: false, ellipsis: true });
+    doc.restore(); cx += pCol.ref;
+    doc.save(); doc.rect(cx, y, pCol.val, rowH).clip();
+    doc.fontSize(5).font('Helvetica-Bold').fillColor('#111111');
+    doc.text(pd.value > 0 ? `${pd.value} cm` : '—', cx + 2, y + 2, { width: pCol.val - 4, align: 'center', lineBreak: false });
+    doc.restore();
+    let bx = tableX;
+    for (const w of [pCol.num, pCol.item, pCol.ref, pCol.val]) {
+      doc.rect(bx, y, w, rowH).strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
+      bx += w;
+    }
+  };
+
+  // Clip left column on first page so text won't bleed into CAD area
+  doc.save();
+  doc.rect(tableX, contentY, tableW, tableBottom - contentY).clip();
+
+  // First page: draw measurement header
+  drawMeasHeader(tableY, tableW, 'MEASUREMENT NAME');
+  tableY += headerH;
+
+  // Main rendering loop — measurements then placements, with page continuation
+  while (!measDone || !placeDone) {
+    // Render measurement rows
+    while (measIdx < visibleMeasurements.length) {
+      if (tableY + rowH > tableBottom) break;
+      drawMeasRow(tableY, tableW, visibleMeasurements[measIdx], measIdx);
+      tableY += rowH;
+      measIdx++;
+    }
+    if (measIdx >= visibleMeasurements.length) measDone = true;
+
+    // Once measurements done, render placement section
+    if (measDone && !placeDone) {
+      if (!placementHeaderDrawn) {
+        const neededH = 11 + 10 + rowH;
+        if (tableY + 5 + neededH <= tableBottom) {
+          tableY += 5;
+          placementSectionStartY = tableY;
+          tableY = drawPlacementHeaders(tableY, tableW);
+          placementHeaderDrawn = true;
+        }
+        // else: not enough room, will draw on continuation page
+      }
+
+      if (placementHeaderDrawn) {
+        while (placeIdx < placements.length) {
+          if (tableY + rowH > tableBottom) break;
+          const num = visibleMeasurements.length + placeIdx + 1;
+          drawPlacementRow(tableY, tableW, placements[placeIdx], num);
+          tableY += rowH;
+          placeIdx++;
+        }
+        if (placeIdx >= placements.length) {
+          placeDone = true;
+          // Draw outer border around placement section
+          if (placementSectionStartY > 0) {
+            doc.rect(tableX, placementSectionStartY, tableW, tableY - placementSectionStartY)
+               .strokeColor(LIGHT_GRAY).lineWidth(0.3).stroke();
+          }
+        }
+      }
+    }
+
+    // If there's still content remaining, add a continuation page
+    if (!measDone || !placeDone) {
+      doc.restore(); // release clip from previous page
+
+      doc.addPage({ size: 'A4', layout: 'landscape' });
+      renderHeader(doc, specs, 'MEASUREMENT DRAWINGS (cont.)', 3, brand);
+
+      // Continuation pages use full width (no CAD drawings)
+      tableW = totalW;
+      tableY = MARGIN + HEADER_HEIGHT + 8;
+
+      doc.save();
+      doc.rect(tableX, tableY, tableW, tableBottom - tableY).clip();
+
+      if (!measDone) {
+        drawMeasHeader(tableY, tableW, 'MEASUREMENT NAME (cont.)');
+        tableY += headerH;
+      } else if (!placeDone && !placementHeaderDrawn) {
+        placementSectionStartY = tableY;
+        tableY = drawPlacementHeaders(tableY, tableW);
+        placementHeaderDrawn = true;
+      } else if (!placeDone && placementHeaderDrawn) {
+        // Draw placement outer border for previous page section if it was started
+        // Re-draw placement sub-headers on continuation
+        placementSectionStartY = tableY;
+        tableY = drawPlacementHeaders(tableY, tableW);
+      }
+    }
+  }
+
+  // Release the table clip
+  doc.restore();
 }
+
 
 function drawPlaceholder(doc: PDFKit.PDFDocument, x: number, y: number, w: number, h: number, label: string) {
   doc.rect(x, y, w, h).strokeColor(LIGHT_GRAY).lineWidth(0.5).dash(3, { space: 3 }).stroke().undash();

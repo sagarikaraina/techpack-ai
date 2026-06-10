@@ -1,5 +1,5 @@
 import { getGenAIClient } from './vertexai.service';
-import { CADDrawings, ConstructionDetail, UniqueFeature, Measurement } from '../types';
+import { CADDrawings, ConstructionDetail, UniqueFeature, Measurement, PlacementDetail } from '../types';
 import { imageQueue } from './queue.service';
 
 const CAD_MODEL = 'gemini-3.1-flash-image-preview';
@@ -43,58 +43,39 @@ Requirements:
 
 function buildAnnotatedPrompt(view: 'front' | 'back', details: { title: string; description: string }[]): string {
   const numbered = details.map((d, i) => `  ${i + 1}. ${d.title}`).join('\n');
-  return `You are a senior garment technician reviewing a flat technical drawing (CAD) of a garment's ${view.toUpperCase()} VIEW. Your job is to add DETAILED construction callout annotations.
+  return `You are a senior garment technician annotating a flat technical drawing (CAD) of a garment's ${view.toUpperCase()} VIEW.
 
-FIRST, thoroughly analyze this CAD drawing — examine every visible line, seam, stitch, edge, and structural element. Identify ALL construction points including subtle ones that a factory would need to know.
-
-The following construction details have been pre-identified — annotate ALL of them, plus any additional technical details you can see in the drawing:
+Mark ONLY the following pre-identified construction points on the drawing:
 
 ${numbered}
 
-ALSO look for and annotate these if visible (even if not listed above):
-- Stitch types at each seam (lockstitch, overlock, coverstitch, flatlock, chain stitch)
-- Topstitching lines and their gauge/distance from edge
-- Seam allowance indicators
-- Bartack / reinforcement points (pocket corners, zipper ends, vent tops)
-- Grain line direction
-- Notch marks and drill holes
-- Binding / tape / piping at neckline, armhole, hem
-- Label / care label placement
-- Fusing / interlining areas (collar, placket, cuff)
-- Ease / gather / pleat distribution points
-- Edge finish type (clean finish, overlock, bound, raw edge)
-- Button/buttonhole size, placement, and spacing
-- Snap, hook, or closure hardware positions
-- Rib knit collar/cuff/hem attachment lines
-
-Requirements:
-- Keep the EXACT SAME garment drawing — do NOT redraw or change it
-- For each detail, add ONLY the NUMBER and SHORT TITLE/KEYWORD as a label (e.g. "1 Collar", "2 Shoulder Seam", "3 Side Seam") — do NOT write descriptions, stitch types, or specifications on the image
-- Use thin red leader lines from each label to the EXACT construction point on the garment
-- Labels should be placed neatly on left and right sides of the drawing, not overlapping the garment
-- Text should be small but clearly legible
-- Aim for 12-20+ annotation callouts — be thorough, a tech pack must capture every detail for factory production
-- Keep the white background`;
+STRICT RULES:
+- Keep the EXACT SAME garment drawing — do NOT redraw, alter, or add any extra details to it
+- For each point, draw a CIRCLED NUMBER connected by a thin red leader line to the exact point on the garment
+- CRITICAL CIRCLE STYLE: Each circle must be OUTLINE ONLY — draw a thin dark-red circular border with WHITE/EMPTY inside (no colour fill whatsoever). The number sits inside this empty outline circle in dark-red ink. Think of it as a hand-drawn ring around the number, NOT a filled dot. NEVER use solid filled circles, coloured discs, or opaque backgrounds behind the numbers
+- Show ONLY the circled number — do NOT write any text, title, keyword, description, stitch type, or label next to the number
+- Do NOT add any annotations beyond the numbered list above — no extra callouts, no additional text anywhere on the image
+- Place the circled numbers neatly around left and right sides of the drawing, not overlapping the garment
+- Keep the white background
+- The image should contain ONLY the original garment drawing + outline-circled numbers with leader lines — nothing else`;
 }
 
-function buildMeasurementPrompt(view: 'front' | 'back', measurements: Measurement[]): string {
-  // Classify each measurement as front, back, or both based on name/id
+function buildMeasurementPrompt(
+  view: 'front' | 'back',
+  measurements: Measurement[],
+  placementDetails: PlacementDetail[] = []
+): string {
   const backOnly = ['across back', 'back neck', 'back yoke', 'back length'];
-  const frontOnly = ['across front', 'front neck', 'front placket'];
 
-  // Filter: keep repo measurements always, skip AI measurements with value 0
-  const nonZero = measurements.filter(m => m.source === 'repo' || m.value > 0);
-
-  let relevant: typeof nonZero;
+  // Include ALL measurements — table shows all, CAD should match
+  let relevant: typeof measurements;
   if (view === 'front') {
-    // Front gets everything EXCEPT back-specific measurements
-    relevant = nonZero.filter(m => {
+    relevant = measurements.filter(m => {
       const lower = (m.name + ' ' + m.id).toLowerCase();
       return !backOnly.some(k => lower.includes(k));
     });
   } else {
-    // Back gets back-specific + shared measurements (shoulder, hem, body length)
-    relevant = nonZero.filter(m => {
+    relevant = measurements.filter(m => {
       const lower = (m.name + ' ' + m.id).toLowerCase();
       return backOnly.some(k => lower.includes(k)) ||
         lower.includes('shoulder') || lower.includes('hem') ||
@@ -102,36 +83,61 @@ function buildMeasurementPrompt(view: 'front' | 'back', measurements: Measuremen
     });
   }
 
-  // Build A, B, C letter labels to keep the diagram clean
-  // We need the global index of each measurement to assign consistent letters
-  const allVisible = measurements.filter(m => m.source === 'repo' || m.value > 0);
+  // Use a GLOBAL number index so front + back diagrams share the same reference numbers
+  // (matches the numbered table printed on Page 3 of the tech pack)
+  const allVisible = measurements;
   const globalIndexMap = new Map<string, number>();
   allVisible.forEach((m, i) => globalIndexMap.set(m.id + '|' + m.name, i));
 
-  const measurementList = relevant
+  let lineNum = allVisible.length + 1; // placement details continue from after standard measurements
+
+  // Standard measurement lines — numbers only, no values
+  const measLines = relevant
     .map(m => {
-      const globalIdx = globalIndexMap.get(m.id + '|' + m.name) ?? 0;
-      const letter = String.fromCharCode(65 + globalIdx);
-      return `  - ${letter}: ${m.name}`;
+      const globalIdx = (globalIndexMap.get(m.id + '|' + m.name) ?? 0) + 1; // 1-based
+      return `  ${globalIdx}. ${m.name}`;
     })
     .join('\n');
 
-  console.log(`Measurement prompt (${view}): ${relevant.length} measurements — ${relevant.map(m => m.name).join(', ')}`);
+  // Placement details — only include those relevant to this view
+  const placementFrontKeywords = ['front', 'centre front', 'cf', 'chest', 'hem', 'neckline', 'print', 'embroidery', 'pocket', 'tie', 'bow', 'placket'];
+  const placementBackKeywords  = ['back', 'cb', 'centre back', 'yoke', 'hem', 'vent'];
+  const relevantPlacements = placementDetails.filter(pd => {
+    const text = (pd.placement + ' ' + pd.reference + ' ' + pd.item).toLowerCase();
+    if (view === 'front') return placementFrontKeywords.some(k => text.includes(k)) || !placementBackKeywords.some(k => text.includes(k));
+    return placementBackKeywords.some(k => text.includes(k)) || text.includes('all round');
+  });
 
-  return `This is a flat technical drawing (CAD) of a garment's ${view.toUpperCase()} VIEW. Add measurement indicator lines with SHORT LETTER LABELS to this EXACT drawing.
+  let placementLines = '';
+  if (relevantPlacements.length > 0) {
+    placementLines = '\n\nPLACEMENT & DETAIL POINTS (also mark these with circled numbers):\n';
+    for (const pd of relevantPlacements) {
+      placementLines += `  ${lineNum}. ${pd.item} @ ${pd.placement}\n`;
+      lineNum++;
+    }
+  }
 
-The following are the specific measurements to annotate (letter = label to use):
+  console.log(`Measurement prompt (${view}): ${relevant.length} measurements + ${relevantPlacements.length} placement details`);
 
-${measurementList}
+  // Same style as page 2 annotated CAD — circled numbers only, no text
+  const numbered = measLines + placementLines;
 
-Requirements:
-- Keep the EXACT SAME garment drawing — do NOT redraw or change it
-- For each measurement listed above, add a thin red measurement line with small arrows at both ends pointing to the correct measurement points on the garment
-- Label each line with ONLY the single letter shown (e.g. "A", "B", "C") — do NOT write the full measurement name on the drawing
-- The letter labels should be small, clean, and positioned at one end of the measurement line
-- Keep lines thin and labels small to avoid visual clutter
-- Place lines and labels clearly without overlapping each other or the drawing
-- Keep the white background`;
+  return `You are a senior garment technician annotating a flat technical drawing (CAD) of a garment's ${view.toUpperCase()} VIEW with measurement point markers.
+
+Mark ONLY the following measurement and placement points on the drawing:
+
+${numbered}
+
+STRICT RULES:
+- Keep the EXACT SAME garment drawing — do NOT redraw, alter, or add any extra details to it
+- For each point, draw a CIRCLED NUMBER connected by a thin red leader line to the exact measurement point on the garment
+- CRITICAL CIRCLE STYLE: Each circle must be OUTLINE ONLY — draw a thin dark-red circular border with WHITE/EMPTY inside (no colour fill whatsoever). The number sits inside this empty outline circle in dark-red ink. Think of it as a hand-drawn ring around the number, NOT a filled dot. NEVER use solid filled circles, coloured discs, or opaque backgrounds behind the numbers
+- For measurement points that span a distance (e.g. shoulder width, chest width), draw a thin red double-ended arrow line (←→) between the two endpoints, with the outline-circled number placed near the centre of the arrow
+- Show ONLY the circled number — do NOT write any text, measurement value, name, keyword, description, or label next to the number
+- Do NOT add any annotations beyond the numbered list above — no extra callouts, no additional text anywhere on the image
+- Place the circled numbers neatly around left and right sides of the drawing, not overlapping the garment
+- Keep the white background
+- The image should contain ONLY the original garment drawing + outline-circled numbers with leader lines/arrows — nothing else`;
 }
 
 async function callImageAPI(imageBuffer: Buffer, mimeType: string, prompt: string): Promise<Buffer | undefined> {
@@ -163,13 +169,25 @@ async function callImageAPI(imageBuffer: Buffer, mimeType: string, prompt: strin
   return undefined;
 }
 
-async function generateImage(imageBuffer: Buffer, mimeType: string, prompt: string): Promise<Buffer | undefined> {
-  try {
-    return await imageQueue.enqueue(() => callImageAPI(imageBuffer, mimeType, prompt));
-  } catch (error: any) {
-    console.error('CAD generation error:', error.message?.substring(0, 200));
-    return undefined;
+async function generateImage(imageBuffer: Buffer, mimeType: string, prompt: string, maxRetries = 2): Promise<Buffer | undefined> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await imageQueue.enqueue(() => callImageAPI(imageBuffer, mimeType, prompt));
+      if (result) return result;
+      // No image in response — retry
+      if (attempt < maxRetries) {
+        console.warn(`CAD generation returned no image (attempt ${attempt + 1}/${maxRetries + 1}), retrying...`);
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      }
+    } catch (error: any) {
+      console.error(`CAD generation error (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message?.substring(0, 200));
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      }
+    }
   }
+  console.error('CAD generation failed after all retries');
+  return undefined;
 }
 
 export interface CADInput {
@@ -208,22 +226,23 @@ export async function generateBaseCAD(
   return { frontView, backView };
 }
 
-// Phase 2: Generate measurement diagrams using actual extracted measurements
+// Phase 2: Generate measurement diagrams using actual extracted measurements + placement details
 export async function generateMeasurementCAD(
   frontCAD: Buffer | undefined,
   backCAD: Buffer | undefined,
   fallbackImage: Buffer,
   fallbackMime: string,
   measurements: Measurement[],
-  onProgress?: (completed: number, total: number, label: string) => void
+  onProgress?: (completed: number, total: number, label: string) => void,
+  placementDetails: PlacementDetail[] = []
 ): Promise<{ measurementFront?: Buffer; measurementBack?: Buffer }> {
   const frontInput = frontCAD || fallbackImage;
   const backInput = backCAD || fallbackImage;
   const frontMime = frontCAD ? 'image/png' : fallbackMime;
   const backMime = backCAD ? 'image/png' : fallbackMime;
 
-  const frontPrompt = buildMeasurementPrompt('front', measurements);
-  const backPrompt = buildMeasurementPrompt('back', measurements);
+  const frontPrompt = buildMeasurementPrompt('front', measurements, placementDetails);
+  const backPrompt = buildMeasurementPrompt('back', measurements, placementDetails);
 
   const [measurementFront, measurementBack] = await Promise.all([
     generateImage(frontInput, frontMime, frontPrompt).then(r => { onProgress?.(3, 4, 'Measurement Front'); return r; }),

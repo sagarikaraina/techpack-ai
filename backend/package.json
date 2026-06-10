@@ -1,11 +1,13 @@
 {
+  "$schema": "https://json.schemastore.org/package.json",
   "name": "techpack-generator-backend",
   "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "update-fit-repo": "node scripts/updateFitRepo.js"
   },
   "dependencies": {
     "@google-cloud/vertexai": "^1.9.2",

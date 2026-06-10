@@ -313,7 +313,7 @@
 
 .ts-p2-th {
   display: flex;
-  background: #f0f0f0;
+  background: #FFFFFF;
   border-bottom: 1.5px solid #C8C2B8;
 }
 
@@ -321,6 +321,7 @@
   padding: 6px 10px;
   font-weight: 700;
   font-size: 11px;
+  color: #111111;
   border-right: 1.5px solid #C8C2B8;
   flex: 1;
 }
@@ -334,6 +335,10 @@
   border-bottom: 1px solid #E8E8E8;
 }
 
+.ts-p2-tr:nth-child(even) {
+  background: #FFFFFF;
+}
+
 .ts-p2-tr:last-child {
   border-bottom: none;
 }
@@ -345,7 +350,7 @@
   font-size: 11px;
   font-weight: 600;
   border-right: 1px solid #E8E8E8;
-  color: #111;
+  color: #111111;
   line-height: 1.4;
 }
 
@@ -353,7 +358,7 @@
   flex: 1;
   padding: 6px 10px;
   font-size: 11px;
-  color: #333;
+  color: #111111;
   line-height: 1.5;
 }
 
@@ -370,7 +375,7 @@
 
 .ts-p3-th {
   display: flex;
-  background: #f0f0f0;
+  background: #FFFFFF;
   border-bottom: 1.5px solid #C8C2B8;
 }
 
@@ -378,6 +383,7 @@
   padding: 7px 12px;
   font-weight: 700;
   font-size: 11px;
+  color: #111111;
   border-right: 1.5px solid #C8C2B8;
 }
 
@@ -390,6 +396,10 @@
   border-bottom: 1px solid #E8E8E8;
 }
 
+.ts-p3-tr:nth-child(even) {
+  background: #FFFFFF;
+}
+
 .ts-p3-tr:last-child {
   border-bottom: none;
 }
@@ -397,6 +407,7 @@
 .ts-p3-td {
   padding: 6px 12px;
   font-size: 11px;
+  color: #111111;
   border-right: 1px solid #E8E8E8;
   display: flex;
   align-items: center;
@@ -424,6 +435,46 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+/* ── Page 3 split layout: table LEFT, CADs RIGHT ── */
+.ts-p3-split-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.ts-p3-split-left {
+  width: 40%;
+  min-width: 280px;
+  border-right: 1.5px solid #C8C2B8;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  font-size: 10.5px;
+}
+
+.ts-p3-split-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 12px;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+/* Compact drawing panels — similar size to page 1 view boxes */
+.ts-p3-split-right .ts-p4-drawing-panel {
+  flex: none;
+  width: 100%;
+}
+
+.ts-p3-split-right .ts-p4-drawing-box {
+  height: 260px;
+  min-height: 0;
+  flex: none;
 }
 
 .ts-drawing-label {
@@ -613,6 +664,185 @@
   gap: 6px;
   align-items: flex-start;
   width: 100%;
+}
+
+/* ── Page 4: Measurement Drawings ── */
+.ts-p4-body {
+  display: flex;
+  flex: 1;
+  gap: 0;
+  height: 100%;
+  min-height: 0;
+}
+
+.ts-p4-drawings {
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  padding: 10px 8px 10px 0;
+  min-width: 0;
+}
+
+.ts-p4-drawing-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ts-p4-drawing-box {
+  flex: 1;
+  border: 1.5px solid #C8C2B8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #FAFAFA;
+  overflow: hidden;
+  min-height: 300px;
+}
+
+.ts-p4-drawing-box img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.ts-p4-legend {
+  width: 220px;
+  min-width: 200px;
+  border-left: 1.5px solid #C8C2B8;
+  display: flex;
+  flex-direction: column;
+  font-size: 9.5px;
+  overflow-y: auto;
+}
+
+.ts-p4-legend-header {
+  display: flex;
+  background: #FFFFFF;
+  padding: 5px 8px;
+  font-weight: 700;
+  font-size: 9px;
+  color: #111111;
+  border-bottom: 1.5px solid #C8C2B8;
+  gap: 4px;
+}
+
+.ts-p4-legend-row {
+  display: flex;
+  gap: 4px;
+  padding: 3px 8px;
+  border-bottom: 1px solid #ECECEC;
+  align-items: flex-start;
+  line-height: 1.3;
+}
+
+.ts-p4-even { background: #FFFFFF; }
+
+.ts-p4-placement { background: #FFFFFF; }
+
+.ts-p4-placement.ts-p4-even { background: #FFFFFF; }
+
+.ts-p4-legend-num {
+  flex: 0.4;
+  font-weight: 700;
+  color: #111111;
+  font-size: 9px;
+  text-align: center;
+  padding-top: 1px;
+}
+
+.ts-p4-legend-name { flex: 2.5; color: #111111; }
+
+.ts-p4-legend-val {
+  flex: 0.6;
+  font-weight: 600;
+  color: #111;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ts-p4-legend-section {
+  background: #FFFFFF;
+  color: #111111;
+  font-size: 8px;
+  font-weight: 700;
+  padding: 4px 8px;
+  letter-spacing: 0.04em;
+  border-top: 1.5px solid #C8C2B8;
+}
+
+/* ── Placement & Detail Specifications (Page 3) ── */
+.ts-placement-section {
+  margin-top: 12px;
+  border-top: 1.5px solid #C8C2B8;
+}
+
+.ts-placement-header {
+  background: #FFFFFF;
+  color: #111111;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 5px 12px;
+  border-bottom: 1.5px solid #C8C2B8;
+}
+
+.ts-placement-th {
+  display: flex;
+  background: #FFFFFF;
+  border-bottom: 1.5px solid #C8C2B8;
+}
+
+.ts-placement-th-cell {
+  padding: 5px 8px;
+  font-weight: 700;
+  font-size: 9.5px;
+  border-right: 1.5px solid #C8C2B8;
+  color: #111111;
+}
+
+.ts-placement-th-cell:last-child {
+  border-right: none;
+}
+
+.ts-placement-tr {
+  display: flex;
+  border-bottom: 1px solid #E8E8E8;
+}
+
+.ts-placement-tr:nth-child(even) {
+  background: #FFFFFF;
+}
+
+.ts-placement-tr:last-child {
+  border-bottom: none;
+}
+
+.ts-placement-td {
+  padding: 5px 8px;
+  font-size: 10px;
+  color: #111111;
+  border-right: 1px solid #E8E8E8;
+  display: flex;
+  align-items: flex-start;
+  line-height: 1.4;
+}
+
+.ts-placement-td:last-child {
+  border-right: none;
+}
+
+.ts-placement-val {
+  justify-content: center;
+  font-weight: 600;
+  color: #111;
+}
+
+.ts-placement-notes {
+  color: #111111;
+  font-style: italic;
+  gap: 4px;
 }
 
 /* ── Print styles ── */

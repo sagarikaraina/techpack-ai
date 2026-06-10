@@ -13,6 +13,13 @@ export interface GarmentSpecifications {
   careInstructions: string[];
   trims: string[];
   uniqueFeatures: UniqueFeature[];
+  /**
+   * Design-specific placement specs: print positions, trim distances,
+   * tie/bow locations, pocket placement, embroidery co-ordinates, label positions.
+   * These are garment-unique — not in the standard fit repo — and MUST be
+   * communicated clearly to the vendor so they know exactly where to apply each detail.
+   */
+  placementDetails?: PlacementDetail[];
   matchedFit?: string;   // e.g. "SLIM", "BOXY", "OVERSIZED"
   matchedBody?: string;  // e.g. "SLIM CROP TEE", "BOXY DROP TEE"
 }
@@ -20,6 +27,24 @@ export interface GarmentSpecifications {
 export interface UniqueFeature {
   name: string;
   description: string;
+}
+
+/**
+ * A single garment-specific placement or detail measurement.
+ *
+ * Examples:
+ *   item="Screen Print"  placement="Centre Front"  reference="from HPS"  value=12  unit="cm"
+ *   item="Lace Trim"     placement="Hem, all round" reference="from hem"  value=4   unit="cm"  notes="mitred at side seams"
+ *   item="Satin Tie"     placement="Left side seam" reference="from waist" value=3  unit="cm"  notes="length 35cm, self-tie bow"
+ *   item="Chest Pocket"  placement="Left chest"     reference="from HPS"  value=18  unit="cm"  notes="5cm from CF"
+ */
+export interface PlacementDetail {
+  item: string;       // What: "Print", "Lace Trim", "Satin Tie", "Patch Pocket", "Embroidery", "Elastic"
+  placement: string;  // Where on the garment: "Centre Front", "Left Chest", "Hem All Round", "Left Side Seam"
+  reference: string;  // Measured from: "from HPS", "from hem", "from CF seam", "from armhole", "from side seam"
+  value: number;      // Numeric distance in cm (0 if not applicable / unknown)
+  unit: string;       // Always "cm"
+  notes: string;      // Extra vendor instructions: dimensions, method, matching, centring, etc.
 }
 
 export interface Measurement {

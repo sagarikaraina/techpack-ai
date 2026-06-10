@@ -7,6 +7,14 @@ interface Material { type: string; description: string; }
 interface ColorSpec { name: string; pantone: string; hex?: string; }
 interface ConstructionDetail { title: string; description: string; location: string; }
 interface UniqueFeature { name: string; description: string; }
+interface PlacementDetail {
+  item: string;
+  placement: string;
+  reference: string;
+  value: number;
+  unit: string;
+  notes: string;
+}
 interface GarmentSpecifications {
   garmentType: string; style: string; description: string;
   season: string; date: string; supplier: string; designer: string;
@@ -14,6 +22,7 @@ interface GarmentSpecifications {
   colors: ColorSpec[]; constructionDetails: ConstructionDetail[];
   careInstructions: string[]; trims: string[];
   uniqueFeatures?: UniqueFeature[];
+  placementDetails?: PlacementDetail[];
   matchedFit?: string; matchedBody?: string;
 }
 
@@ -111,8 +120,14 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
     const next = JSON.parse(JSON.stringify(specs));
     const parts = arrayPath.split('.');
     let cur: any = next;
-    for (const p of parts) cur = cur[p];
-    cur.push(item);
+    for (let i = 0; i < parts.length - 1; i++) {
+      const p = parts[i];
+      if (cur[p] === undefined) cur[p] = {};
+      cur = cur[p];
+    }
+    const lastKey = parts[parts.length - 1];
+    if (!Array.isArray(cur[lastKey])) cur[lastKey] = [];
+    cur[lastKey].push(item);
     onUpdate(next);
   }, [specs, onUpdate]);
 
@@ -239,12 +254,12 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
                   ? <CadImage jobId={jobId} version={imageVersion} type={`detail-${i}`} alt={f.name} className="ts-swatch-img" />
                   : <div className="ts-swatch-box" />
                 }
-                <div className="ts-swatch-ref">{f.name}</div>
+                <div className="ts-swatch-ref"><E path={`uniqueFeatures.${i}.name`} label={`Feature ${i+1}`} /></div>
               </div>
             )) : specs.trims.slice(0, 3).map((t, i) => (
               <div key={i} className="ts-swatch-item">
                 <div className="ts-swatch-box" />
-                <div className="ts-swatch-ref">{t}</div>
+                <div className="ts-swatch-ref"><E path={`trims.${i}`} label={`Trim ${i+1}`} /></div>
               </div>
             ))}
           </div>
@@ -261,13 +276,13 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
         <div className="ts-header">
           <div className="ts-logo">{brandName}</div>
           <div className="ts-desc-cell"><div className="ts-desc-main">Technical Comments</div></div>
-          <div className="ts-style-cell">Style: {specs.style}</div>
+          <div className="ts-style-cell">Style: <E path="style" label="Style" /></div>
         </div>
         <div className="ts-subrow">
-          <div className="ts-sub-cell"><span className="ts-sub-label">Season:</span> {specs.season}</div>
-          <div className="ts-sub-cell"><span className="ts-sub-label">Date:</span> {specs.date}</div>
-          <div className="ts-sub-cell"><span className="ts-sub-label">Vendor:</span> {specs.supplier}</div>
-          <div className="ts-sub-cell"><span className="ts-sub-label">Designer:</span> {specs.designer}</div>
+          <div className="ts-sub-cell"><span className="ts-sub-label">Season:</span> <E path="season" label="Season" /></div>
+          <div className="ts-sub-cell"><span className="ts-sub-label">Date:</span> <E path="date" label="Date" /></div>
+          <div className="ts-sub-cell"><span className="ts-sub-label">Vendor:</span> <E path="supplier" label="Vendor" /></div>
+          <div className="ts-sub-cell"><span className="ts-sub-label">Designer:</span> <E path="designer" label="Designer" /></div>
         </div>
 
         {/* Annotated views */}
@@ -348,61 +363,103 @@ export default function TechSheet({ specs, jobId, images, originalCount, editMod
         </div>
       </div>
 
-      {/* ═══════ PAGE 3: SAMPLE SIZE ═══════ */}
+      {/* ═══════ PAGE 3: MEASUREMENTS TABLE (LEFT) + CAD DRAWINGS (RIGHT) ═══════ */}
       <div className="ts-page">
         <div className="ts-header">
           <div className="ts-logo">{brandName}</div>
-          <div className="ts-desc-cell"><div className="ts-desc-main">SAMPLE SIZE</div></div>
-          <div className="ts-style-cell">Style: {specs.style}</div>
+          <div className="ts-desc-cell"><div className="ts-desc-main">MEASUREMENT DRAWINGS</div></div>
+          <div className="ts-style-cell">Style: <E path="style" label="Style" /></div>
         </div>
         <div className="ts-subrow">
-          <div className="ts-sub-cell"><span className="ts-sub-label">Season:</span> {specs.season}</div>
-          <div className="ts-sub-cell"><span className="ts-sub-label">Date:</span> {specs.date}</div>
-          <div className="ts-sub-cell"><span className="ts-sub-label">Vendor:</span> {specs.supplier}</div>
-          <div className="ts-sub-cell"><span className="ts-sub-label">Designer:</span> {specs.designer}</div>
+          <div className="ts-sub-cell"><span className="ts-sub-label">Season:</span> <E path="season" label="Season" /></div>
+          <div className="ts-sub-cell"><span className="ts-sub-label">Date:</span> <E path="date" label="Date" /></div>
+          <div className="ts-sub-cell"><span className="ts-sub-label">Vendor:</span> <E path="supplier" label="Vendor" /></div>
+          <div className="ts-sub-cell"><span className="ts-sub-label">Designer:</span> <E path="designer" label="Designer" /></div>
         </div>
 
-        <div className="ts-p3-body">
-          {/* Left: Measurement table — filter out AI measurements with value 0, always keep repo */}
-          <div className="ts-p3-table">
+        <div className="ts-p3-split-body">
+          {/* LEFT: measurement table + placement details */}
+          <div className="ts-p3-split-left">
             <div className="ts-p3-th">
-              <div className="ts-p3-th-cell" style={{ flex: 0.5 }}>REF</div>
-              <div className="ts-p3-th-cell" style={{ flex: 2.0 }}>NAME</div>
-              <div className="ts-p3-th-cell" style={{ flex: 0.8, textAlign: 'center' }}>M (CM)</div>
+              <div className="ts-p3-th-cell" style={{ flex: 0.5 }}>NO.</div>
+              <div className="ts-p3-th-cell" style={{ flex: 2.0 }}>MEASUREMENT NAME</div>
+              <div className="ts-p3-th-cell" style={{ flex: 0.8, textAlign: 'center' }}>VALUE (CM)</div>
             </div>
-            {specs.measurements
-              .map((m, origIdx) => ({ m, origIdx }))
-              .filter(({ m }) => m.source === 'repo' || m.value > 0)
-              .map(({ m, origIdx }, visIdx) => (
-              <div key={origIdx} className="ts-p3-tr">
-                <div className="ts-p3-td ts-p3-id" style={{ flex: 0.5, fontWeight: 600, textAlign: 'center' }}>
-                  {String.fromCharCode(65 + visIdx)}
+            {specs.measurements.map((m, idx) => (
+              <div key={idx} className="ts-p3-tr">
+                <div className="ts-p3-td ts-p3-id" style={{ flex: 0.5 }}>
+                  {idx + 1}
                 </div>
                 <div className="ts-p3-td" style={{ flex: 2.0 }}>
-                  <E path={`measurements.${origIdx}.name`} label={`M${visIdx+1} Name`} />
+                  <E path={`measurements.${idx}.name`} label={`M${idx+1} Name`} />
                 </div>
                 <div className="ts-p3-td ts-p3-val" style={{ flex: 0.8 }}>
-                  {m.value > 0 ? <E path={`measurements.${origIdx}.value`} label={`M${visIdx+1} Value`} /> : <span style={{ color: '#999' }}>-</span>}
-                  {editMode && <button className="ts-row-del" onClick={() => removeRow('measurements', origIdx, '- Measurement')}>x</button>}
+                  <E path={`measurements.${idx}.value`} label={`M${idx+1} Value`} />
+                  {editMode && <button className="ts-row-del" onClick={() => removeRow('measurements', idx, '- Measurement')}>x</button>}
                 </div>
               </div>
             ))}
-            {editMode && <button className="ts-add-row" style={{ margin: '8px 12px' }} onClick={() => addRow('measurements', { id: `M${specs.measurements.length + 1}`, name: 'New', value: 0, unit: 'cm' }, '+ Measurement')}>+ Add Measurement</button>}
+            {editMode && <button className="ts-add-row" style={{ margin: '8px 12px' }} onClick={() => addRow('measurements', { id: `M${specs.measurements.length + 1}`, name: 'New Measurement', value: 0, unit: 'cm' }, '+ Measurement')}>+ Add Measurement</button>}
+
+            {/* Placement & Detail Specifications */}
+            {((specs.placementDetails && specs.placementDetails.length > 0) || editMode) && (
+              <div className="ts-placement-section">
+                <div className="ts-placement-header">PLACEMENT &amp; DETAIL SPECIFICATIONS</div>
+                <div className="ts-placement-th">
+                  <div className="ts-placement-th-cell" style={{ flex: 0.4 }}>NO.</div>
+                  <div className="ts-placement-th-cell" style={{ flex: 1.0 }}>ITEM</div>
+                  <div className="ts-placement-th-cell" style={{ flex: 1.2 }}>PLACEMENT</div>
+                  <div className="ts-placement-th-cell" style={{ flex: 1.0 }}>MEASURED FROM</div>
+                  <div className="ts-placement-th-cell" style={{ flex: 0.6, textAlign: 'center' }}>DIST (CM)</div>
+                  <div className="ts-placement-th-cell" style={{ flex: 2.0 }}>VENDOR NOTES</div>
+                </div>
+                {(specs.placementDetails || []).filter(pd => pd.item).map((pd, idx) => {
+                  const num = specs.measurements.length + idx + 1;
+                  return (
+                    <div key={idx} className="ts-placement-tr">
+                      <div className="ts-placement-td ts-placement-val" style={{ flex: 0.4, fontWeight: 700, justifyContent: 'center', color: '#111111' }}>{num}</div>
+                      <div className="ts-placement-td" style={{ flex: 1.0 }}>
+                        <E path={`placementDetails.${idx}.item`} label="Item" />
+                      </div>
+                      <div className="ts-placement-td" style={{ flex: 1.2 }}>
+                        <E path={`placementDetails.${idx}.placement`} label="Placement" />
+                      </div>
+                      <div className="ts-placement-td" style={{ flex: 1.0 }}>
+                        <E path={`placementDetails.${idx}.reference`} label="Reference" />
+                      </div>
+                      <div className="ts-placement-td ts-placement-val" style={{ flex: 0.6, textAlign: 'center' }}>
+                        {pd.value > 0 ? <E path={`placementDetails.${idx}.value`} label="Distance" /> : <span style={{ color: '#999' }}>—</span>}
+                      </div>
+                      <div className="ts-placement-td ts-placement-notes" style={{ flex: 2.0 }}>
+                        <E path={`placementDetails.${idx}.notes`} label="Notes" />
+                        {editMode && <button className="ts-row-del" onClick={() => removeRow('placementDetails', idx, '- Placement')}>x</button>}
+                      </div>
+                    </div>
+                  );
+                })}
+                {editMode && (
+                  <button className="ts-add-row" style={{ margin: '6px 12px' }}
+                    onClick={() => addRow('placementDetails', { item: '', placement: '', reference: 'from HPS', value: 0, unit: 'cm', notes: '' }, '+ Placement Detail')}>
+                    + Add Placement Detail
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Right: Measurement drawings */}
-          <div className="ts-p3-drawings">
-            <div>
+          {/* RIGHT: front + back CAD drawings with measurement arrows */}
+          <div className="ts-p3-split-right">
+            <div className="ts-p4-drawing-panel">
               <div className="ts-drawing-label">FRONT — MEASUREMENT DRAWING</div>
-              <div className="ts-drawing-box">
+              <div className="ts-p4-drawing-box">
                 {images.measurementFront
                   ? <CadImage jobId={jobId} version={imageVersion} type="measurement-front" alt="Front Measurements" />
                   : <span className="ts-view-empty">Front measurement drawing</span>}
               </div>
             </div>
-            <div>
+            <div className="ts-p4-drawing-panel">
               <div className="ts-drawing-label">BACK — MEASUREMENT DRAWING</div>
-              <div className="ts-drawing-box">
+              <div className="ts-p4-drawing-box">
                 {images.measurementBack
                   ? <CadImage jobId={jobId} version={imageVersion} type="measurement-back" alt="Back Measurements" />
                   : <span className="ts-view-empty">Back measurement drawing</span>}
